@@ -3,6 +3,20 @@ import plotly.express as px
 from src.data_loader import load_master
 
 
+
+st.set_page_config(
+    page_title="Crop Shield",
+    page_icon="🌽",
+    layout="wide",
+)
+
+
+
+from src.ui.heat_map import render_advisory
+#from src.ui.soil_map import render_soil_context
+#from src.ui.county_report import render_county_report
+#from src.ui.validation import render_validation
+
 # Data
 
 @st.cache_data
@@ -13,13 +27,13 @@ def get_data():
 df = get_data()
 
 # Page config
-st.set_page_config(
-    page_title="Data to Harvest: AI for Agricultural Resilience Hackathon",
-    page_icon=":ear_of_corn:",
-    layout="wide",
-)
-st.title("Data to Harvest: AI for Agricultural Resilience Hackathon")
-st.caption("DSU Hackathon, October 17-18, 2026 * One row = one county, one crop, one year")
+# st.set_page_config(
+#     page_title="Crop Shield",
+#     page_icon=":ear_of_corn:",
+#     layout="wide",
+# )
+st.title("Crop Shield")
+#st.caption("DSU Hackathon, October 17-18, 2026 * One row = one county, one crop, one year")
 
 
 # Sidebar filters
@@ -54,8 +68,9 @@ filtered = df[
 st.sidebar.metric("Rows selected", f"{len(filtered):,}")
 
 # Tabs
-tab_overview, tab_weather, tab_drought, tab_soil = st.tabs(
-    ["Overview", "Weather & Yield", "Drought Analysis", "Soil & Risk"]
+
+tab_overview, tab_heat, tab_soil, tab_county_report = st.tabs(
+    ["Overview", "Heat Stress Map", "Soil Water Storage Map", "County Report"]
 )
 
 # Tab 1: Overview
@@ -95,18 +110,19 @@ with tab_overview:
         st.info("No reported yields for this selection.")
 
 
-# Tab 2: Weather & Yield
+# Tab 2: Heat Stress - Include Heat risk Score and how we got there
 
-with tab_weather:
-    st.subheader("Weather & Yield")
-    st.write("Explore how precipitation, temperature, GDD, and extreme heat relate to crop yield.")
+with tab_heat:
+    render_advisory()
+    #st.subheader("Weather & Yield")
+    #st.write("Explore how precipitation, temperature, GDD, and extreme heat relate to crop yield.")
 
     # TODO: Your weather analysis here
 
 
-# Tab 3: Drought Analysis
+# Tab 3: Include prioritization
 
-with tab_drought:
+with tab_soil:
     st.subheader("Drought Analysis")
     st.write("Investigate how drought severity and duration affect yields.")
 
@@ -114,7 +130,7 @@ with tab_drought:
 
 # Tab 4: Soil & Risk
 
-with tab_soil:
+with tab_county_report:
     st.subheader("Soil & Risk")
     st.write("Separate what the soil determines from what the weather determines.")
     # TODO: Your soil and risk analysis here
