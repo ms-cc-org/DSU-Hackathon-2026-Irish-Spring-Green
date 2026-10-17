@@ -248,6 +248,182 @@ If you want a question to explore before choosing a user:
 
 ---
 
+## Crop and Soil Resilience Analysis
+
+### Overview
+
+CropShield evaluates how drought, heat stress, and soil water storage relate to historical crop performance in Iowa. The goal is to help county extension agents and agricultural resilience planners identify areas that may warrant closer attention, understand the environmental stressors associated with crop losses, and communicate the evidence behind county-level priorities.
+
+The initial analysis focuses on **Iowa corn and soybeans**, using county-level agricultural, weather, drought, and soil data from 2000–2025. Iowa was selected because it has broad county coverage for both crops and is predominantly rainfed, making it a useful setting for investigating the relationship between soil water storage and drought-related yield losses.
+
+### Dataset and Variables
+
+The analysis uses the hackathon's master dataset, which contains one record per county, crop, and harvest year.
+
+| Category | Variables | Purpose |
+| --- | --- | --- |
+| Geographic identifiers | `fips`, `county_name`, `state_alpha` | Identify and map counties |
+| Crop performance | `yield_anomaly_pct`, `yield_per_acre`, `yield_status` | Measure historical crop outcomes |
+| Drought exposure | `max_drought_severity`, `weeks_in_d2_plus`, `mean_dsci` | Measure drought intensity and duration |
+| Heat stress | `extreme_heat_days`, `tavg_c`, `gdd` | Characterize growing-season heat exposure |
+| Soil characteristics | `aws_100cm_mm`, `droughty_pct`, `nccpi_crop` | Measure soil water storage, drought-vulnerable soil, and crop-specific soil productivity |
+| Weather | `precip_mm`, `precip_anomaly_pct` | Characterize precipitation and departures from normal conditions |
+
+County FIPS codes are stored as five-character strings to preserve leading zeros and support reliable joins with geographic boundary data.
+
+### Study Population and Data Preparation
+
+The initial dataset is restricted to:
+
+- State: Iowa (`IA`)
+- Crops: corn (`CORN`) and soybeans (`SOYBEANS`)
+- Harvest years: 2000–2025
+
+The analysis retains missing values as unknown rather than replacing them with zero. Records with missing yield anomalies, soil water storage, or drought measurements are excluded only from analyses that require those fields.
+
+The primary outcome, `yield_anomaly_pct`, measures the percentage deviation of observed yield from the county-crop pair's fitted long-term yield trend. Negative values indicate yields below the fitted trend; positive values indicate yields above it.
+
+Because the anomaly trend is calculated using the full 2000–2025 period, this outcome is suitable for retrospective analysis but is not a leakage-free measure for forecasting within that same period.
+
+### Soil Water Storage Classification
+
+Available water supply in the top 100 cm of soil (`aws_100cm_mm`) is used as the primary soil water storage measure. Higher values indicate greater estimated capacity to retain water available to plants.
+
+For exploratory comparisons, Iowa counties are divided into three soil storage categories:
+
+- **Low storage:** values at or below the county-level median minus one standard deviation.
+- **Medium storage:** values between those thresholds.
+- **High storage:** values at or above the median plus one standard deviation.
+
+Soil measurements are time-invariant in the source dataset, so each county receives one classification that is applied to its crop-year records.
+
+These categories do not necessarily contain equal numbers of counties. They should be treated as descriptive groupings rather than natural scientific thresholds. Continuous soil storage is retained for regression analysis.
+
+### Drought-Year Comparison
+
+Drought exposure is defined as a maximum drought severity of 3 or greater, corresponding to D2 (severe drought) or worse on the dataset's encoded scale.
+
+For each crop and soil storage category, the analysis calculates:
+
+- Number of eligible county-year observations.
+- Mean and median yield anomaly.
+- Standard deviation of yield anomalies.
+- Difference in mean yield anomaly between high- and low-storage counties.
+
+The difference is calculated as:
+
+`High-storage mean anomaly − Low-storage mean anomaly`
+
+A positive difference indicates that high-storage counties had better average yield anomalies during drought years; a negative difference indicates worse average anomalies.
+
+Because counties contribute multiple years of observations, the observations are not statistically independent. County-level sample sizes and uncertainty intervals are therefore important when interpreting differences.
+
+#### Exploratory Results
+
+The initial drought-year comparison produced the following results:
+
+| Crop | High-storage mean anomaly | Low-storage mean anomaly | Difference |
+| --- | --- | --- | --- |
+| Corn | −8.12% | −6.28% | −1.84 percentage points |
+| Soybeans | −6.09% | −7.65% | +1.56 percentage points |
+
+The bootstrap confidence intervals for the high-minus-low differences were:
+
+- **Corn:** −3.75 to +0.06 percentage points.
+- **Soybeans:** −0.73 to +3.78 percentage points.
+
+The corn estimate favored low-storage counties, while the soybean estimate favored high-storage counties. Both intervals include zero, so these comparisons do not establish a clear difference between the storage groups.
+
+These results are observational and do not establish whether soil water storage causes better or worse drought outcomes.
+
+### Regression Analysis
+
+An ordinary least squares (OLS) regression was used to examine whether soil water storage was associated with yield anomalies and whether that relationship differed during drought.
+
+The model includes:
+
+- Crop indicators.
+- Year fixed effects.
+- Centered soil water storage.
+- A binary D2+ drought indicator.
+- An interaction between soil water storage and drought.
+- Crop-specific soil productivity (`nccpi_crop`).
+
+Standard errors are clustered by county to account for repeated observations within counties.
+
+The model's interaction term tests whether the estimated association between soil water storage and yield anomaly differs between drought and non-drought observations.
+
+#### Regression Results
+
+| Term | Coefficient | 95% confidence interval | p-value |
+| --- | --- | --- | --- |
+| Centered soil water storage | +0.180 | −0.063 to +0.422 | 0.146 |
+| D2+ drought | −4.318 | −5.122 to −3.515 | \<0.001 |
+| Storage × drought | −0.231 | −1.041 to +0.580 | 0.577 |
+| Crop-specific soil productivity | −1.182 | −2.365 to +0.001 | 0.050 |
+
+The drought coefficient indicates that D2+ exposure was associated with yield anomalies approximately 4.32 percentage points lower than non-drought observations at average soil water storage, conditional on the included model terms.
+
+The storage-by-drought interaction was not statistically distinguishable from zero. Therefore, the analysis did not find clear evidence that the association between soil water storage and yield anomaly differed during drought.
+
+The soil productivity estimate is borderline and should not be interpreted as strong evidence of an independent relationship.
+
+These estimates describe associations within the observed data. They do not demonstrate causal effects, and the absence of a statistically clear interaction does not establish that soil water storage provides no resilience benefit.
+
+### County Priority Map
+
+The primary visualization will be an interactive county-level map of Iowa. Users will be able to select corn or soybeans, explore historical stress exposure, and inspect the evidence supporting each county's priority.
+
+The county-level summary will include:
+
+| Metric | Definition |
+| --- | --- |
+| Drought frequency | Share of valid crop-year observations with D2+ drought |
+| Heat frequency | Share of valid observations meeting the selected heat-stress rule |
+| Mean yield anomaly | Average observed yield anomaly across valid years |
+| Stress-year yield anomaly | Average yield anomaly in years meeting the selected stress definition |
+| Soil water storage | County-level `aws_100cm_mm` |
+| Observation count | Number of valid records supporting the assessment |
+
+Drought and heat frequencies will use their respective valid observations as denominators. Unknown values will not be treated as evidence of no stress.
+
+The initial priority ranking will emphasize recurrent stress and historical crop impacts. Soil water storage will be displayed as a separate resilience indicator rather than assumed to have a proven protective effect. The final scoring formula and thresholds will be documented and tested for sensitivity to alternative reasonable choices.
+
+Counties with limited observations will be flagged so that sparse evidence is not mistaken for low agricultural risk.
+
+County geometries will be joined to the summary table using the five-character `fips` identifier and the county boundary file, `data/counties.geojson`.
+
+### Heat-Stress Integration
+
+Heat stress will be incorporated as a complementary risk dimension. The initial baseline is the presence of at least one growing-season day with maximum temperature at or above 35°C, using `extreme_heat_days`.
+
+This baseline is not assumed to be an agronomically optimal warning threshold. Further analysis will compare candidate heat rules against the baseline using a training period and held-out years, with particular attention to corn and soybeans.
+
+The heat-stress component will distinguish historical exposure from validated predictive performance. A rule will only be described as predictive if its performance is demonstrated on held-out data.
+
+### Limitations
+
+The analysis has several important limitations:
+
+1. **Observational data:** associations between soil, drought, heat, and yield do not establish causality.
+2. **Yield anomalies:** the supplied anomalies use trends fitted across the entire 2000–2025 period, limiting their suitability for historical forecasting without recomputation.
+3. **Irrigation:** Iowa is predominantly rainfed, but irrigation and other management differences are not fully represented in the master dataset.
+4. **Soil measurements:** soil water storage is a static county-level estimate and does not capture field-level variability, changing soil conditions, or irrigation water applied.
+5. **County aggregation:** county-average weather and soil characteristics can conceal local conditions and differences between fields.
+6. **Missing yields:** county-crop-year records may lack published yields or valid anomalies. Results may therefore reflect the subset of observations with available data.
+7. **Repeated observations:** county-year records are correlated, and uncertainty estimates must account for repeated observations within counties.
+8. **Heat thresholds:** the 35°C baseline is a convenient comparison rule, not a universal biological threshold for crop damage.
+
+### Planned Deliverable
+
+The final deliverable will be an interactive CropShield county-priority map supported by a transparent county report card. Each report card will summarize drought and heat exposure, historical yield outcomes, soil water storage, and the amount of supporting evidence.
+
+The objective is to help agricultural extension agents and resilience planners identify counties warranting further investigation and understand why they are prioritized. Recommendations will explicitly distinguish measured exposure, observed crop outcomes, and relationships that remain uncertain.
+
+The map is a historical decision-support tool, not a guarantee of future losses or a substitute for field-level agronomic advice.
+
+---
+
 ## Repo layout
 
 ```
