@@ -232,3 +232,5 @@ To evaluate the heat rule, define a historical poor-yield outcome, choose formul
 - Number of county-crop-years flagged
 
 This separation between observed advisory inputs and later yield outcomes prevents using end-of-season information in a current-season decision.
+
+
