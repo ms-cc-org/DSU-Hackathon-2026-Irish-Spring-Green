@@ -18,7 +18,7 @@ model = artifact['model']
 model_features = artifact['features']
 
 # Load the master dataset to act as our weather/soil database
-df = pd.read_csv('data/master_dataset.csv', dtype={'fips': str})
+df = pd.read_csv('../data/master_dataset.csv', dtype={'fips': str}) 
 
 @app.get("/api/counties")
 def get_county_predictions(crop: str, year: int = 2023):

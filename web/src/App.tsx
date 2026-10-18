@@ -54,12 +54,28 @@ function App() {
   const [crop, setCrop] = useState<'CORN' | 'SOYBEAN'>('CORN')
 
   useEffect(() => {
-    fetch('/data/counties.geojson').then((response) => response.json()).then((data: FeatureCollection<Polygon, CountyProperties>) => {
-      const iowaFeatures = data.features.filter((feature) => feature.properties.state_alpha === 'IA')
-      setCounties(iowaFeatures.map((feature) => buildCounty(feature.properties)))
-      setBoundaries({ ...data, features: iowaFeatures })
-    }).catch((error) => console.error('Could not load county boundaries:', error))
-  }, [])
+    const loadMapData = async () => {
+    try {
+      // 1. Fetch the static map boundaries
+      const geoResponse = await fetch('/data/counties.geojson');
+      const geoData: FeatureCollection<Polygon, CountyProperties> = await geoResponse.json();
+      const iowaFeatures = geoData.features.filter((f) => f.properties.state_alpha === 'IA');
+      setBoundaries({ ...geoData, features: iowaFeatures });
+
+      // 2. Fetch the live predictions from your FastAPI backend
+      const apiResponse = await fetch(`http://localhost:8000/api/counties?crop=${crop}&year=${DEMO_YEAR}`);
+      const apiCounties: County[] = await apiResponse.json();
+      
+      // 3. Update the dashboard state with the real data
+      setCounties(apiCounties);
+      
+    } catch (error) {
+      console.error('Could not load county data:', error);
+    }
+  };
+
+  loadMapData();
+}, [crop]);
 
   const selectedCounty = counties.find((county) => county.fips === selectedFips) ?? counties[0]
   const countyByFips = useMemo(() => new Map(counties.map((county) => [county.fips, county])), [counties])
