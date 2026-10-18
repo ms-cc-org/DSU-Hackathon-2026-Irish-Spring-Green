@@ -1,524 +1,234 @@
-# Data to Harvest: AI for Agricultural Resilience Hackathon
+# CropShield
 
-**October 17–18, 2026 | Delaware State University | 24 hours**
+**County-level heat and soil-resilience decision support for Iowa corn and soybeans.**
 
-Droughts, heat waves and unusual weather make farming harder to plan. Many people make decisions about this every season: crop insurers, extension agents, state drought programs, grain buyers. Your team picks one of them, uses 26 years of real county farm data to help them make one decision, and builds a tool that shows it.
+CropShield helps agricultural extension specialists and soil-conservation partners decide where to prioritize outreach when heat and drought conditions threaten crop performance. It combines observed daily weather, weekly drought conditions, and county soil-water-storage capacity into an interactive county map and statewide report.
 
----
+> **Current status:** CropShield calculates a transparent advisory-priority score from observed conditions through a defined advisory date. It is not a forecast of future weather or an exact crop-yield-loss prediction.
 
-## What you'll do
+## The user
 
-1. **Pick a user and a decision.** Choose one of the directions below or bring your own. By checkpoint 1 (Saturday afternoon), name your user and the decision your tool helps them make.
-2. **Find the evidence.** Use the data to answer the question behind that decision. Test your answer on years you didn't use to build it.
-3. **Build a tool for your user.** It shows them the evidence and what to decide. It can be a **Streamlit app** (a starter app is included), a **Jupyter notebook** (a starter notebook is included), or another **Python app**. Your user should be able to use it without reading your code.
-4. **Present it.** About 5 minutes of pitch and live demo, then 3 minutes of judges' questions. Explain who your user is, what they decide, what evidence you used, and how you know it works.
+Our primary users are:
 
-By checkpoint 2 (Saturday evening), your data should load and a first version should run. Your GitHub repository should include your code and short instructions to run it. Judges reward a tool that clearly helps its user, not technical complexity for its own sake.
+- Agricultural and crop extension specialists
+- Soil-conservation and resilience-planning staff
 
-### Minimum deliverable
+They need to decide which Iowa counties should receive the earliest heat-stress outreach and which counties deserve longer-term soil-resilience planning attention.
 
-Every team must finish:
-- one named user and decision;
-- one piece of evidence, checked on years not used to build it (or an honest statement of why it can't be);
-- a tool the user can use;
-- a 5-minute pitch with a live demo.
+## The problem
 
-You don't need to complete every item in the **Success looks like** column below. That column describes a strong finished project; the minimum deliverable is what this hackathon requires. Each direction's own minimum is listed under the table.
+Heat and drought do not affect every county equally. Extension teams have limited time and need a defensible way to identify counties where observed heat, drought duration, and lower soil-water-storage capacity indicate greater need for outreach.
 
----
+The challenge is to make those signals useful without overstating what county-level historical data can prove. A county score must show its inputs, its data date, and its limitations.
 
-## Choose a direction
+## Questions we answer
 
-Each direction names a user, their decision, and what success means. Pick one, combine two, or bring your own idea. Combining two only works if each stays at its minimum.
+1. Which Iowa counties have the highest observed heat-and-moisture stress through the advisory date?
+2. Which counties have experienced the most D2+ drought weeks or the most severe drought conditions so far?
+3. Which counties have lower available soil-water storage and may have less buffering capacity during dry periods?
+4. How do heat-risk and soil-resilience priorities differ for corn and soybeans?
+5. Does the transparent weighted score improve upon a simple `days with tmax ≥ 35°C` baseline on unseen historical years? *(Validation is the next analysis step; the UI does not claim this result until it is measured.)*
 
-| Direction | Who decides | Their decision | Success looks like | Start → Go further |
-|---|---|---|---|---|
-| **Crop Loss Early Warning** | Crop insurance office | Which counties to inspect first, on August 1 | Flags more real losses than "all counties in severe drought" (or shows why it can't) | **Start:** severe-drought counties on the last weekly map before August 1 → **Further:** a model with weather up to August 1 from the daily panel (not the master's season totals) |
-| **Drought Assistance Targeting** | State drought program | Which counties get help first, and what triggers it | A 2-minute county report card; a 2000–2015 ranking that beats chance on 2016–2025 | **Start:** report card from the drought, yield and soil fields (don't rank by average `yield_anomaly_pct`) → **Further:** test trigger rules on the weekly panel |
-| **Heat-Stress Advisory** | Extension crop specialist | When to warn corn and soybean growers about heat | A heat rule that beats "days at 35 °C or hotter" on unseen years | **Start:** yields in years with many vs few `extreme_heat_days` → **Further:** your own heat measures from the daily panel, allowing for drought |
-| **Soil and Crop Resilience Planning** | Soil conservation office | Where soil programs cut drought losses most | A priority map and a soil-effect estimate with a range ("no clear effect" counts) | **Start:** drought-year losses for high vs low soil water storage → **Further:** model drought × soil; check by state and time period |
-| **Grain Supply Outlook** | Iowa ethanol plant | Whether to buy corn from outside its area | A production estimate with a range that beats the trend | **Start:** yield × harvested acres for counties that report every year → **Further:** add weather and drought; check your range |
-| **Frost-Safe Planting Calendar** | Extension agronomist | The earliest safe planting date per county | A date built on 2000–2018 that sees frost after it in no more than 1 in 10 years of 2019–2025 | **Start:** each county's last spring day at or below 0 °C (daily panel), then a high percentile → **Further:** a safety margin, a map, fall frost (county averages miss low-lying fields) |
-| **Drought Category Reality Check** | State drought task force | Whether a drought level such as D3 should mean the same in Iowa and Nebraska | A drought level → yield loss table from 2000–2012 that predicts 2013–2025 within about 4 points (Iowa, Nebraska corn and soybeans) | **Start:** average `yield_anomaly_pct` by `max_drought_severity` (4 = D3), state and crop → **Further:** drought timing from the weekly panel; split by `irrigated_share` |
-| **AgriAdvisor** *(optional, built on another direction)* | County extension agent | How to answer a farmer's question | Right answers on hand-checked questions; "the data can't answer that" when it can't | **Start:** Python functions that answer questions and show the rows behind them → **Further:** let an AI model call them (needs your own API key or a local model) |
+## Directions selected
 
-**Minimum to finish, per direction:**
+CropShield combines two hackathon directions:
 
-| Direction | Minimum to finish |
+| Direction | Decision supported | What CropShield provides |
+|---|---|---|
+| Heat-Stress Advisory | When and where to warn corn and soybean growers about heat | A county heat-and-moisture score built from weather, drought, and soil context |
+| Soil & Crop Resilience Planning | Where to prioritize soil-resilience outreach before drought conditions intensify | A soil-water-storage map, low/medium/high storage groups, and historical drought-resilience analysis |
+
+## Our solution
+
+The React dashboard has two views:
+
+- **Overview** — an interactive Iowa county map with Corn/Soybeans, season, heat-risk/soil-storage, and priority filters. Selecting a county shows its observed heat days, D2+ drought weeks, maximum drought severity, available soil-water storage, score, and recommended outreach level.
+- **State Report** — separate statewide heat-stress and soil-resilience summaries, including the priority-county lists for each perspective.
+
+The dashboard reads the generated advisory table at:
+
+```text
+web/public/data/county_heat_advisory.csv
+```
+
+## How the heat advisory works
+
+The advisory uses only conditions observed through a crop-specific decision date:
+
+| Crop | Season start | Advisory date |
+|---|---|---|
+| Corn | May 1 | July 15 |
+| Soybeans | May 1 | August 1 |
+
+For each Iowa county, crop, and year, the notebook calculates:
+
+- `hot35_days_to_date` — days with county-average maximum temperature at or above 35°C
+- `d2plus_weeks_to_date` — weeks where D2, D3, or D4 drought covered more than 1% of the county
+- `max_drought_severity_to_date` — worst observed drought category on the project’s 0–5 scale
+- `aws_100cm_mm` — static available soil-water storage in the top 100 cm
+- `soil_storage_group` — Iowa storage tercile: `LOW`, `MEDIUM`, or `HIGH`
+
+### Weighted score: `weighted_v1`
+
+Each component is normalized to 0–1 and capped to prevent one measure from overwhelming the score.
+
+```text
+Heat exposure = min(hot35_days_to_date / 8, 1)
+
+Drought duration = min(d2plus_weeks_to_date / 6, 1)
+
+Drought severity = min(max(max_drought_severity_to_date − 2, 0) / 3, 1)
+
+Drought stress = 0.65 × drought duration + 0.35 × drought severity
+
+Soil vulnerability = 1.0 for LOW storage, 0.5 for MEDIUM, 0.0 for HIGH
+
+Heat Risk Score = 100 × (
+  0.60 × heat exposure
+  + 0.30 × drought stress
+  + 0.10 × soil vulnerability
+)
+```
+
+| Score | Priority label | Suggested action |
+|---:|---|---|
+| 0–34 | Low | Continue routine monitoring |
+| 35–59 | Watch | Monitor the next weekly update |
+| 60–100 | High | Prioritize extension outreach |
+
+These are transparent prototype weights, not learned model coefficients. The application displays the underlying inputs so users can understand why a county was flagged.
+
+## Data sources
+
+| Source | Used for |
 |---|---|
-| Crop Loss Early Warning | The D2+ watch list for any chosen year (last weekly map before August 1), its hit rate over 2000–2025, and a tool that shows the list with the reason for each county. Needs date handling on the weekly panel: intermediate. |
-| Drought Assistance Targeting | The county report card (drought frequency, drought-year losses, soil) for any county, plus the 2000–2015 → 2016–2025 ranking check. |
-| Heat-Stress Advisory | One heat rule chosen on 2000–2018 and checked on 2019–2025 (hit rate and false-alarm rate), compared with the master's `extreme_heat_days`, shown in a simple tool. |
-| Soil and Crop Resilience Planning | A map of soil water storage with priority counties, and one comparison of drought-year losses between high- and low-storage counties with a range (for example a bootstrap), stating which counties and years it covers. |
-| Grain Supply Outlook | Production for a group of counties that report every year, a trend-only estimate with a range from past trend errors, and a check on held-out years of how often the real value fell inside the range. |
-| Frost-Safe Planting Calendar | A planting date per county built on 2000–2018, its frost rate on 2019–2025, a map, and the safety margin with its trade-off. |
-| Drought Category Reality Check | The table, its 2013–2025 check, and a one-sentence recommendation, shown in a simple tool. |
-| AgriAdvisor | Only on top of another direction's minimum. 3–5 Python functions that answer common questions from the data and show the rows behind each answer, and a set of hand-checked test questions, including some the data can't answer. No language model needed. |
-| Your own idea | The four items in the minimum deliverable above. |
+| NOAA ACIS daily county weather | Daily maximum temperature and precipitation; calculates heat-day counts through the advisory date |
+| U.S. Drought Monitor weekly county data | D2+ duration and maximum drought severity through the advisory date |
+| USDA NRCS SSURGO | Static county available soil-water storage (`aws_100cm_mm`) |
+| USDA NASS county yield data | Historical yield anomalies used for retrospective analysis and future validation |
+| Iowa county GeoJSON | Dashboard map boundaries |
 
----
+The included historical panels span 2000–2025. The source-pull scripts can refresh daily weather and weekly drought panels with 2026 observations.
 
-## Team setup and submission
+## Run the project
 
-### 1. Get your team's repository
+### Prerequisites
 
-Each team works in its own public GitHub repository under the official DSU Hackathon organization ([ms-cc-org](https://github.com/ms-cc-org)), made from the [starter project](https://github.com/ms-cc-org/DSU-Hackathon). Use the team repository the organizers give you, for example `DSU-Hackathon-Team-alpha`; don't work directly in the shared starter repository. [Get set up](#get-set-up) shows how to download it.
+- Python 3.11 or newer
+- Node.js 20 or newer
+- npm
 
-Your team repository already has the starter files. Add your code, notebooks, documentation and other deliverables to it. It is public, so never commit passwords or API keys.
+### 1. Create and activate a Python environment
 
-### 2. Minimum deliverable
+From the repository root:
 
-Complete the [minimum deliverable](#minimum-deliverable). Make sure your repository contains the work needed to demonstrate it.
-
-### 3. Submit your work
-
-**Deadline: Sunday, October 18, 2026, 12:00 PM (noon) Eastern Time.**
-
-Submit by filling in the [**submission form**](https://github.com/ms-cc-org/DSU-Hackathon/issues/new?template=submission.yml) (a GitHub issue on the starter repository). One submission per team. It asks for:
-- your team name;
-- the names and GitHub usernames of all team members;
-- the URL of your team's repository;
-- the full commit SHA of the exact version you want judged.
-
-To find your final commit SHA: open your team's repository on GitHub, open the commit history, select the commit with your final submission, and copy the full SHA (40 characters). Check that this commit contains your completed minimum deliverable.
-
-### 4. After submitting
-
-The organizers save a copy of the submitted commit for judging and records. The SHA identifies the version that is judged; changes pushed after you submit are not included. Keep your repository available until the organizers confirm your submission was recorded.
-
-### 5. Final checklist
-
-- You are working in your team's repository.
-- Your team has completed the minimum deliverable.
-- All team members are listed in the submission.
-- Your repository URL is correct.
-- Your final commit SHA is correct.
-- Your submission is in before the deadline.
-
----
-
-## What we provide
-
-### The master dataset
-
-One table where **each row is one county, one crop, one year**. For example, the row for Polk County, Iowa, corn, 2012 holds that year's corn yield (149.1 bushels per acre, 15.5% below the county's normal), the drought and weather during that growing season, and the county's soil.
-
-- **4 states:** California (irrigated), Iowa (rainfed), Nebraska (part irrigated), Delaware (rainfed, small)
-- **4 crops:** corn grain, soybeans, winter wheat, grain sorghum
-- **26 years:** 2000–2025
-- **21 columns** of yield, weather, drought and soil, in 17,056 rows
-
-Only 68% of rows have a reported yield. The well-covered part is **Iowa and Nebraska corn and soybeans**, plus Nebraska wheat. California, Delaware, sorghum, and Iowa and Delaware wheat are thin. Check the coverage table in the data dictionary before you pick a project.
-
-### County codes (FIPS)
-
-Every county has a 5-digit code called a **FIPS code**: `19153` is Polk County, Iowa, and `06001` is Alameda County, California. Every file uses it, so it's how you combine tables: matching the FIPS code (plus the year, when both tables have one) lines up the rows for the same county.
-
-Keep it as text. If it's read as a number, `06001` becomes `6001` and California rows stop matching anything, with no error.
-
-### More detailed data
-
-- **Daily weather** (temperature and rain per county per day), **weekly drought maps**, **soil per county**, and the raw **NASS crop records**. Use these to build your own measures, for example heat in July only.
-- **Satellite greenness (MODIS)**: one value per county per year, matched to the master by county and year.
-- **Irrigation**: the share of each crop that was irrigated and irrigated vs. dryland yields, mostly for Nebraska 2000–2018, matched by county, crop and year.
-- **County boundaries** for maps.
-
-Every column, every gap and every known limitation is explained in the [**data dictionary**](data/data_dictionary.md). Read it before you start.
-
----
-
-## Get set up
-
-You need Python, the code and data from this repo, and the Python packages the code uses. The install downloads about 200 MB and uses about 900 MB of disk, so do it before the event, not on event wifi.
-
-### 1. Check your Python
-
-You need **Python 3.11 or newer** (3.12 recommended). In a terminal, run `python3 --version` (Windows: `py --version`). If it's older, install 3.12 from [python.org](https://www.python.org/downloads/). The `python3` that comes with macOS is 3.9 and won't work.
-
-### 2. Download the repo and install the packages
-
-These commands copy your team's repository (see [Team setup and submission](#team-setup-and-submission)) to your computer, create a **virtual environment** (a private folder, `.venv`, that holds this project's packages so they don't clash with anything else on your computer), turn it on, and install the packages listed in `requirements.txt`.
-
-**macOS / Linux:**
 ```bash
-git clone https://github.com/ms-cc-org/YOUR-TEAM-REPO.git
-cd YOUR-TEAM-REPO
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
-**Windows (PowerShell):**
+On Windows PowerShell:
+
 ```powershell
-git clone https://github.com/ms-cc-org/YOUR-TEAM-REPO.git
-cd YOUR-TEAM-REPO
 py -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 ```
 
-Replace `YOUR-TEAM-REPO` with your team repository's name, for example `DSU-Hackathon-Team-alpha`, or copy the whole URL from the green **Code** button on your team's GitHub page.
+### 2. Generate the advisory data
 
-It worked if your prompt starts with `(.venv)`. Each time you open a new terminal, `cd` into your repo folder and run the activate line again.
+Open and run every cell in:
 
-If something goes wrong:
-- **PowerShell says running scripts is disabled:** run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once, then activate again. In Command Prompt (cmd), activate with `.venv\Scripts\activate.bat` instead.
-- **pip says `No matching distribution found for numpy==2.4.6`:** the venv was made with Python older than 3.11. Delete the `.venv` folder and create it again with a newer Python.
+```text
+notebooks/build_heat_advisory_df.ipynb
+```
 
-### 3. Run the starter app
+You can launch Jupyter from the repository root with:
 
 ```bash
-streamlit run app.py
+jupyter lab
 ```
 
-The first time, Streamlit asks for an email address in the terminal. Press Enter to skip it; the app then opens in your browser. It has filters for state, crop and years, a working yield chart in the Overview tab, and three empty tabs (Weather & Yield, Drought Analysis, Soil & Risk) for you to build on.
+The notebook writes both analysis outputs and the dashboard data file:
 
-### 4. Open the starter notebook
-
-From the repo root, with the venv active, run `jupyter lab` and open `notebooks/starter_notebook.ipynb` (or open it in VS Code and pick the `.venv` kernel). It loads the data, walks through the 2012 Iowa drought, and gives three questions to start from.
-
-No install? Open the starter notebook in Google Colab and run its first cell, which fetches the data. Colab doesn't save to your team's repository: to keep your work, download it (**File → Download → Download .ipynb**) and add it to your team's repository on GitHub (**Add file → Upload files**).
-
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ms-cc-org/DSU-Hackathon/blob/main/notebooks/starter_notebook.ipynb)
-
----
-
-## Load the data in your own code
-
-The data loader handles file paths and data types for you. Run these from the repo root. From a subfolder such as `notebooks/`, add `import sys; sys.path.insert(0, "..")` first, as the starter notebook does.
-
-If your Streamlit app is in a subfolder (for example `team_x/app.py`), start it from the repo root with `python -m streamlit run team_x/app.py`. Plain `streamlit run team_x/app.py` fails with `No module named 'src'`.
-
-```python
-from src.data_loader import load_master
-
-df = load_master()          # 17,056 rows x 21 columns, fips is already a string
+```text
+data/derived/county_heat_advisory.csv
+data/derived/county_heat_advisory.parquet
+web/public/data/county_heat_advisory.csv
 ```
 
-The detailed data:
+The final path is what the React app loads. Re-run the notebook whenever the formula or source data changes, then refresh the browser.
 
-```python
-from src.data_loader import load_nass_raw, load_daily_weather, load_weekly_drought, load_soil, load_modis, load_irrigation, load_counties
+### 3. Run the React dashboard
 
-nass    = load_nass_raw()         # 35K rows, yield/acres in long format per county
-weather = load_daily_weather()    # 2.5M rows, daily tmax/tmin/precip per county
-drought = load_weekly_drought()   # 343K rows, weekly D0-D4 per county
-soil    = load_soil()             # 253 rows, one per county (static)
-modis   = load_modis()            # 5,980 rows, annual NDVI/EVI per county (extension)
-irrigation = load_irrigation()    # 3,716 rows, irrigated share and yields per county x crop x year (extension)
-counties = load_counties()        # GeoJSON boundaries for maps, feature id = fips
-```
-
-To read the files directly instead:
-
-```python
-import pandas as pd
-
-df = pd.read_parquet("data/master_dataset.parquet")
-# or
-df = pd.read_csv("data/master_dataset.csv", dtype={"fips": str})
-```
-
-With `read_csv`, always pass `dtype={"fips": str}`. With `read_parquet`, three count columns come back as pandas `Int64`, whose missing values some numpy calls don't see (`np.isnan(df["weeks_in_d2_plus"]).sum()` gives 0, not 150); `load_master()` converts them to float.
-
-For maps, the notebook's worked example shows `px.choropleth` with `load_counties()`. Plotly 7 removed `px.choropleth_mapbox` and `px.scatter_mapbox`, which older tutorials use; use `px.choropleth` or `px.choropleth_map` instead.
-
----
-
-## Test on past years
-
-Build your tool on some years and test it on years it hasn't seen (for example, build on 2000–2018 and test on 2019–2025). That's how you show it would have worked in a real season. `yield_anomaly_pct` comes from a trend fitted on all of 2000–2025, including your test years; for a strict test, refit each county's trend on your training years only. `precip_anomaly_pct` is the same: its average uses all 26 years.
-
-Use only what your user would know on the day they decide. On August 1, for example, `acres_harvested` and the master's season totals (weather and drought to the end of the season) aren't known yet; build those measures from the daily and weekly panels up to your decision date.
-
-**Optional, advanced: the 2026 season.** The dataset ends in 2025, but the ACIS and Drought Monitor APIs serve 2026 data with no key. `src/build/ACIS_data_pull.py` and `USDM_data_pull.py` show the requests (the drought API's JSON uses lowercase `d0`–`d4`). USDA's monthly *Crop Production* reports give official 2026 state yield forecasts to compare against.
-
----
-
-## Research questions the data can answer
-
-If you want a question to explore before choosing a user:
-
-1. When a county is in D2+ drought during its growing season, how far does yield fall below trend?
-2. In rainfed Iowa, do counties with higher soil water storage (`aws_100cm_mm`) lose less yield in drought years? (Don't pool Nebraska: its lowest-storage counties are the most heavily irrigated, so they look drought-resistant for reasons the soil fields can't show.)
-3. In Nebraska, sorghum's yield falls further below trend than corn's in drought years, even though sorghum is the "drought-tolerant" crop. What could explain that? (Hint: which crop is usually irrigated? Check how many sorghum counties report after 2010.)
-4. Is precipitation a stronger yield predictor in rainfed Iowa than in irrigated California?
-5. Is there an extreme heat threshold above which yield drops sharply? Does it differ by crop?
-6. Once you control for soil quality (`nccpi_crop`), how much of the yield gap is left for drought to explain?
-
----
-
-## Crop and Soil Resilience Analysis
-
-### Overview
-
-CropShield evaluates how drought, heat stress, and soil water storage relate to historical crop performance in Iowa. The goal is to help county extension agents and agricultural resilience planners identify areas that may warrant closer attention, understand the environmental stressors associated with crop losses, and communicate the evidence behind county-level priorities.
-
-The initial analysis focuses on **Iowa corn and soybeans**, using county-level agricultural, weather, drought, and soil data from 2000–2025. Iowa was selected because it has broad county coverage for both crops and is predominantly rainfed, making it a useful setting for investigating the relationship between soil water storage and drought-related yield losses.
-
-### Dataset and Variables
-
-The analysis uses the hackathon's master dataset, which contains one record per county, crop, and harvest year.
-
-| Category | Variables | Purpose |
-| --- | --- | --- |
-| Geographic identifiers | `fips`, `county_name`, `state_alpha` | Identify and map counties |
-| Crop performance | `yield_anomaly_pct`, `yield_per_acre`, `yield_status` | Measure historical crop outcomes |
-| Drought exposure | `max_drought_severity`, `weeks_in_d2_plus`, `mean_dsci` | Measure drought intensity and duration |
-| Heat stress | `extreme_heat_days`, `tavg_c`, `gdd` | Characterize growing-season heat exposure |
-| Soil characteristics | `aws_100cm_mm`, `droughty_pct`, `nccpi_crop` | Measure soil water storage, drought-vulnerable soil, and crop-specific soil productivity |
-| Weather | `precip_mm`, `precip_anomaly_pct` | Characterize precipitation and departures from normal conditions |
-
-County FIPS codes are stored as five-character strings to preserve leading zeros and support reliable joins with geographic boundary data.
-
-### Study Population and Data Preparation
-
-The initial dataset is restricted to:
-
-- State: Iowa (`IA`)
-- Crops: corn (`CORN`) and soybeans (`SOYBEANS`)
-- Harvest years: 2000–2025
-
-The analysis retains missing values as unknown rather than replacing them with zero. Records with missing yield anomalies, soil water storage, or drought measurements are excluded only from analyses that require those fields.
-
-The primary outcome, `yield_anomaly_pct`, measures the percentage deviation of observed yield from the county-crop pair's fitted long-term yield trend. Negative values indicate yields below the fitted trend; positive values indicate yields above it.
-
-Because the anomaly trend is calculated using the full 2000–2025 period, this outcome is suitable for retrospective analysis but is not a leakage-free measure for forecasting within that same period.
-
-### Soil Water Storage Classification
-
-Available water supply in the top 100 cm of soil (`aws_100cm_mm`) is used as the primary soil water storage measure. Higher values indicate greater estimated capacity to retain water available to plants.
-
-For exploratory comparisons, Iowa counties are divided into three soil storage categories:
-
-- **Low storage:** values at or below the county-level median minus one standard deviation.
-- **Medium storage:** values between those thresholds.
-- **High storage:** values at or above the median plus one standard deviation.
-
-Soil measurements are time-invariant in the source dataset, so each county receives one classification that is applied to its crop-year records.
-
-These categories do not necessarily contain equal numbers of counties. They should be treated as descriptive groupings rather than natural scientific thresholds. Continuous soil storage is retained for regression analysis.
-
-### Drought-Year Comparison
-
-Drought exposure is defined as a maximum drought severity of 3 or greater, corresponding to D2 (severe drought) or worse on the dataset's encoded scale.
-
-For each crop and soil storage category, the analysis calculates:
-
-- Number of eligible county-year observations.
-- Mean and median yield anomaly.
-- Standard deviation of yield anomalies.
-- Difference in mean yield anomaly between high- and low-storage counties.
-
-The difference is calculated as:
-
-`High-storage mean anomaly − Low-storage mean anomaly`
-
-A positive difference indicates that high-storage counties had better average yield anomalies during drought years; a negative difference indicates worse average anomalies.
-
-Because counties contribute multiple years of observations, the observations are not statistically independent. County-level sample sizes and uncertainty intervals are therefore important when interpreting differences.
-
-#### Exploratory Results
-
-The initial drought-year comparison produced the following results:
-
-| Crop | High-storage mean anomaly | Low-storage mean anomaly | Difference |
-| --- | --- | --- | --- |
-| Corn | −8.12% | −6.28% | −1.84 percentage points |
-| Soybeans | −6.09% | −7.65% | +1.56 percentage points |
-
-The bootstrap confidence intervals for the high-minus-low differences were:
-
-- **Corn:** −3.75 to +0.06 percentage points.
-- **Soybeans:** −0.73 to +3.78 percentage points.
-
-The corn estimate favored low-storage counties, while the soybean estimate favored high-storage counties. Both intervals include zero, so these comparisons do not establish a clear difference between the storage groups.
-
-These results are observational and do not establish whether soil water storage causes better or worse drought outcomes.
-
-### Regression Analysis
-
-An ordinary least squares (OLS) regression was used to examine whether soil water storage was associated with yield anomalies and whether that relationship differed during drought.
-
-The model includes:
-
-- Crop indicators.
-- Year fixed effects.
-- Centered soil water storage.
-- A binary D2+ drought indicator.
-- An interaction between soil water storage and drought.
-- Crop-specific soil productivity (`nccpi_crop`).
-
-Standard errors are clustered by county to account for repeated observations within counties.
-
-The model's interaction term tests whether the estimated association between soil water storage and yield anomaly differs between drought and non-drought observations.
-
-#### Regression Results
-
-| Term | Coefficient | 95% confidence interval | p-value |
-| --- | --- | --- | --- |
-| Centered soil water storage | +0.180 | −0.063 to +0.422 | 0.146 |
-| D2+ drought | −4.318 | −5.122 to −3.515 | \<0.001 |
-| Storage × drought | −0.231 | −1.041 to +0.580 | 0.577 |
-| Crop-specific soil productivity | −1.182 | −2.365 to +0.001 | 0.050 |
-
-The drought coefficient indicates that D2+ exposure was associated with yield anomalies approximately 4.32 percentage points lower than non-drought observations at average soil water storage, conditional on the included model terms.
-
-The storage-by-drought interaction was not statistically distinguishable from zero. Therefore, the analysis did not find clear evidence that the association between soil water storage and yield anomaly differed during drought.
-
-The soil productivity estimate is borderline and should not be interpreted as strong evidence of an independent relationship.
-
-These estimates describe associations within the observed data. They do not demonstrate causal effects, and the absence of a statistically clear interaction does not establish that soil water storage provides no resilience benefit.
-
-### County Priority Map
-
-The primary visualization will be an interactive county-level map of Iowa. Users will be able to select corn or soybeans, explore historical stress exposure, and inspect the evidence supporting each county's priority.
-
-The county-level summary will include:
-
-| Metric | Definition |
-| --- | --- |
-| Drought frequency | Share of valid crop-year observations with D2+ drought |
-| Heat frequency | Share of valid observations meeting the selected heat-stress rule |
-| Mean yield anomaly | Average observed yield anomaly across valid years |
-| Stress-year yield anomaly | Average yield anomaly in years meeting the selected stress definition |
-| Soil water storage | County-level `aws_100cm_mm` |
-| Observation count | Number of valid records supporting the assessment |
-
-Drought and heat frequencies will use their respective valid observations as denominators. Unknown values will not be treated as evidence of no stress.
-
-The initial priority ranking will emphasize recurrent stress and historical crop impacts. Soil water storage will be displayed as a separate resilience indicator rather than assumed to have a proven protective effect. The final scoring formula and thresholds will be documented and tested for sensitivity to alternative reasonable choices.
-
-Counties with limited observations will be flagged so that sparse evidence is not mistaken for low agricultural risk.
-
-County geometries will be joined to the summary table using the five-character `fips` identifier and the county boundary file, `data/counties.geojson`.
-
-### Heat-Stress Integration
-
-Heat stress will be incorporated as a complementary risk dimension. The initial baseline is the presence of at least one growing-season day with maximum temperature at or above 35°C, using `extreme_heat_days`.
-
-This baseline is not assumed to be an agronomically optimal warning threshold. Further analysis will compare candidate heat rules against the baseline using a training period and held-out years, with particular attention to corn and soybeans.
-
-The heat-stress component will distinguish historical exposure from validated predictive performance. A rule will only be described as predictive if its performance is demonstrated on held-out data.
-
-### Limitations
-
-The analysis has several important limitations:
-
-1. **Observational data:** associations between soil, drought, heat, and yield do not establish causality.
-2. **Yield anomalies:** the supplied anomalies use trends fitted across the entire 2000–2025 period, limiting their suitability for historical forecasting without recomputation.
-3. **Irrigation:** Iowa is predominantly rainfed, but irrigation and other management differences are not fully represented in the master dataset.
-4. **Soil measurements:** soil water storage is a static county-level estimate and does not capture field-level variability, changing soil conditions, or irrigation water applied.
-5. **County aggregation:** county-average weather and soil characteristics can conceal local conditions and differences between fields.
-6. **Missing yields:** county-crop-year records may lack published yields or valid anomalies. Results may therefore reflect the subset of observations with available data.
-7. **Repeated observations:** county-year records are correlated, and uncertainty estimates must account for repeated observations within counties.
-8. **Heat thresholds:** the 35°C baseline is a convenient comparison rule, not a universal biological threshold for crop damage.
-
-### Planned Deliverable
-
-The final deliverable will be an interactive CropShield county-priority map supported by a transparent county report card. Each report card will summarize drought and heat exposure, historical yield outcomes, soil water storage, and the amount of supporting evidence.
-
-The objective is to help agricultural extension agents and resilience planners identify counties warranting further investigation and understand why they are prioritized. Recommendations will explicitly distinguish measured exposure, observed crop outcomes, and relationships that remain uncertain.
-
-The map is a historical decision-support tool, not a guarantee of future losses or a substitute for field-level agronomic advice.
-
----
-
-## Repo layout
-
-```
-app.py                          Streamlit app — run with: streamlit run app.py
-LICENSE                         MIT license for the code and docs (data credits in README)
-requirements.txt                pinned dependencies (app, notebook, modelling)
-
-data/
-├── master_dataset.csv          the dataset (2.3 MB)
-├── master_dataset.parquet      same data, smaller and faster (412 KB)
-├── data_dictionary.md          every field, every warning, every known gap
-├── counties.geojson            county boundaries for maps (253 counties)
-└── processed/                  source parquets (for advanced teams)
-    ├── acis/                   daily county weather, 1999–2025
-    ├── drought/                weekly drought severity, 2000–2025
-    ├── irrigation/             irrigated share and yields, mostly Nebraska (extension)
-    ├── modis/                  annual NDVI/EVI per county (extension)
-    ├── nass/                   crop yield and acreage
-    └── soil/                   county soil properties (static)
-
-src/
-├── data_loader.py              load_master(), load_nass_raw(), load_daily_weather(), etc.
-└── build/                      pipelines that built the dataset (reference only)
-    └── validate_sources.py     sanity checks across all 4 sources
-
-notebooks/
-└── starter_notebook.ipynb      load the data, worked example, places to start
-
-docs/
-├── Data to Harvest Hackathon at Delaware State University.md   event concept, judging rubric
-├── dataset_specification.md    technical build contract — fields, filters, formulas
-├── technical_implementation_plan.md   scope, state/crop rationale, pipeline
-└── timeline.md                 organizer prep timeline
-
-.github/ISSUE_TEMPLATE/
-└── submission.yml              the submission form (see Team setup and submission)
-```
-
-## Data sources
-
-| Source | What it provides | Access |
-|---|---|---|
-| [USDA NASS Quick Stats](https://quickstats.nass.usda.gov/api) | Crop yield and acreage, irrigated split | API key (free) |
-| [NOAA ACIS GridData](https://docs.rcc-acis.org/acisws/) | Daily precipitation, temperature | No key |
-| [U.S. Drought Monitor](https://droughtmonitor.unl.edu/) | Weekly drought severity (D0–D4) | No key |
-| [USDA NRCS Soil Data Access](https://sdmdataaccess.nrcs.usda.gov/) | Soil water capacity, productivity | No key |
-| [NASA MODIS MOD13Q1 v061](https://lpdaac.usgs.gov/products/mod13q1v061/) | Satellite vegetation indices (NDVI, EVI) | GEE (free) |
-
-All sources are public federal data. The master dataset and all processed files are included in the repo — no API calls needed to start working.
-
-### Credits
-
-If you publish or present results from this data, credit the sources:
-
-- **U.S. Drought Monitor:** The U.S. Drought Monitor is jointly produced by the National Drought Mitigation Center at the University of Nebraska-Lincoln, the United States Department of Agriculture, and the National Oceanic and Atmospheric Administration.
-- **USDA NASS:** This product uses the NASS API but is not endorsed or certified by NASS.
-- **NOAA ACIS:** Weather data from the Applied Climate Information System (ACIS), NOAA Regional Climate Centers.
-- **Soil:** Soil Survey Staff, Natural Resources Conservation Service, United States Department of Agriculture. Soil Survey Geographic (SSURGO) Database, via Soil Data Access.
-- **MODIS:** Didan, K. (2021). MODIS/Terra Vegetation Indices 16-Day L3 Global 250m SIN Grid V061. NASA EOSDIS Land Processes DAAC. https://doi.org/10.5067/MODIS/MOD13Q1.061
-- **County boundaries** (`data/counties.geojson`): U.S. Census Bureau county boundaries, from the [plotly/datasets](https://github.com/plotly/datasets) county GeoJSON.
-
-The code and documentation in this repo are under the [MIT License](LICENSE).
-
-## Rebuilding the data (organizers only)
-
-<details>
-You never need to rebuild the data for the hackathon. Everything is already in `data/`. This section is for organizers refreshing it.
-
-Get a free [NASS API key](https://quickstats.nass.usda.gov/api) and add it to a `.env` file in the repo root:
-
-```
-NASS_API_KEY=your_key_here
-```
-
-Then run the scripts in `src/build/` in this order:
-
-1. `NASS_data_pull.py`
-2. `USDM_data_pull.py`
-3. `ACIS_data_pull.py`
-4. `SSURGO_data_pull.py`
-5. `validate_sources.py`: checks the four source files
-6. `build_master.py`: builds `data/master_dataset.csv` and `.parquet`
-
-The scripts work from any directory. USDM, ACIS and SSURGO cache API responses in `data/raw/`, so a re-run only downloads what's missing. `data/raw/` is not in the repo, so on a fresh clone every script downloads everything. NASS always downloads fresh.
-
-**Irrigation extension.** `NASS_irrigation_pull.py` runs after `NASS_data_pull.py` and uses the same NASS key.
-
-**MODIS extension (organizer only).** `MODIS_gee_pull.py` runs after `build_master.py` and needs a Google Earth Engine account linked to a Google Cloud project:
+In a second terminal:
 
 ```bash
-pip install earthengine-api
-earthengine authenticate
+cd web
+npm install
+npm run dev
 ```
 
-Then add `EE_PROJECT=your-cloud-project-id` to `.env`.
+Open the local URL printed by Vite, normally `http://localhost:5173`.
 
-Never commit `.env`.
-</details>
+To create a production build instead:
+
+```bash
+npm run build
+```
+
+### Optional: refresh 2026 weather and drought observations
+
+The pull scripts use cached historical files and fetch missing 2026 source data after their `YEAR_END` setting is updated to `2026`.
+
+```bash
+./.venv/bin/python src/build/ACIS_data_pull.py
+./.venv/bin/python src/build/USDM_data_pull.py
+```
+
+Then set the advisory notebook’s replay range to include 2026:
+
+```python
+REPLAY_YEARS = list(range(2000, 2027))
+```
+
+Run the notebook again. It marks 2026 rows as `data_mode = "current"`; 2000–2025 rows remain `historical_replay`.
+
+## Project structure
+
+```text
+├── notebooks/
+│   ├── build_heat_advisory_df.ipynb  # Creates county-level advisory rows
+│   └── soil_resilience.ipynb         # Soil-storage and historical drought-resilience analysis
+├── data/
+│   ├── processed/acis/               # Daily weather panel
+│   ├── processed/drought/            # Weekly Drought Monitor panel
+│   ├── processed/soil/               # Static county soil properties
+│   └── derived/                      # Generated advisory exports
+├── src/build/
+│   ├── ACIS_data_pull.py             # Refresh daily weather data
+│   └── USDM_data_pull.py             # Refresh weekly drought data
+└── web/
+    ├── public/data/                  # Map boundaries and dashboard CSV
+    └── src/                          # React + TypeScript dashboard
+```
+
+## Limitations and responsible use
+
+- CropShield is a county-level planning tool, not a field-level agronomic diagnosis.
+- The heat-risk score uses observed conditions through the advisory date. It does not predict future heat, drought, or exact yield loss.
+- Soil-water storage is a static county context measure; it does not represent a field’s current soil moisture.
+- The score is a transparent weighted prototype. It must be tested against held-out 2019–2025 outcomes before it is described as outperforming the `extreme_heat_days` baseline.
+- Use the score alongside crop stage, irrigation access, local scouting, and extension expertise before recommending action to growers.
+
+## Next validation step
+
+To evaluate the heat rule, define a historical poor-yield outcome, choose formula thresholds on 2000–2018, freeze them, then compare the weighted score with the `hot35_days_to_date` baseline on 2019–2025. Report at least:
+
+- Hit rate
+- False-alarm rate
+- Precision
+- Number of county-crop-years flagged
+
+This separation between observed advisory inputs and later yield outcomes prevents using end-of-season information in a current-season decision.

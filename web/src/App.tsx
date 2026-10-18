@@ -5,137 +5,133 @@ import type { FeatureCollection, Polygon } from 'geojson'
 import './App.css'
 
 type CountyProperties = { fips: string; county_name: string; state_alpha: string }
+type Crop = 'CORN' | 'SOYBEANS'
 type MapMode = 'heat' | 'soil'
 type PriorityFilter = 'all' | 'high' | 'watch'
+type Page = 'overview' | 'state-report'
 type County = CountyProperties & {
-  crop: 'CORN' | 'SOYBEAN'; year: number; asOfDate: string; heatRisk: number; soilPriority: number
-  hotDays: number; heatBurden: number; heatStreak: number; droughtWeeks: number; dryStreak: number; waterStorage: number
+  crop: Crop; year: number; asOfDate: string; weatherThroughDate: string; droughtThroughDate: string; dataMode: string
+  heatRisk: number; riskLevel: string; hotDays: number; droughtWeeks: number; maxDroughtSeverity: number
+  waterStorage: number; soilStorageGroup: string; soilPriority: number; advisoryAction: string; formulaVersion: string
 }
 
-const DEMO_YEAR = 2023
-
-function stableNumber(seed: string, label: string, min: number, max: number) {
-  let hash = 0
-  for (const character of `${seed}-${label}`) hash = (hash * 31 + character.charCodeAt(0)) >>> 0
-  return min + (hash % (max - min + 1))
-}
-
-function buildCounty(properties: CountyProperties): County {
-  const waterStorage = stableNumber(properties.fips, 'storage', 75, 218)
-  const heatRisk = Number((stableNumber(properties.fips, 'risk', 12, 91) / 100).toFixed(2))
-  const droughtWeeks = stableNumber(properties.fips, 'drought', 0, 7)
-  return {
-    ...properties, crop: 'CORN', year: DEMO_YEAR, asOfDate: '2023-08-01', heatRisk,
-    // Soil priority is a display placeholder: lower available water storage and longer drought raise priority.
-    soilPriority: Math.min(.95, Number((((218 - waterStorage) / 143) * .72 + droughtWeeks / 7 * .28).toFixed(2))),
-    hotDays: stableNumber(properties.fips, 'hot-days', 2, 15),
-    heatBurden: Number((stableNumber(properties.fips, 'burden', 42, 254) / 10).toFixed(1)),
-    heatStreak: stableNumber(properties.fips, 'streak', 1, 8), droughtWeeks,
-    dryStreak: stableNumber(properties.fips, 'dry-streak', 4, 22), waterStorage,
+function splitCsvLine(line: string) {
+  const values: string[] = []; let value = ''; let quoted = false
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index]
+    if (character === '"') {
+      if (quoted && line[index + 1] === '"') { value += '"'; index += 1 } else quoted = !quoted
+    } else if (character === ',' && !quoted) { values.push(value); value = '' } else value += character
   }
+  values.push(value)
+  return values
+}
+
+function parseAdvisoryCsv(csv: string): County[] {
+  const [header, ...lines] = csv.trim().split(/\r?\n/)
+  const columns = splitCsvLine(header)
+  return lines.filter(Boolean).map((line) => {
+    const row = Object.fromEntries(columns.map((column, index) => [column, splitCsvLine(line)[index] ?? '']))
+    return {
+      fips: row.fips, county_name: row.county_name, state_alpha: row.state_alpha,
+      crop: row.crop as Crop, year: Number(row.year), asOfDate: row.as_of_date,
+      weatherThroughDate: row.weather_through_date, droughtThroughDate: row.drought_through_date, dataMode: row.data_mode,
+      heatRisk: Number(row.heat_risk_score) / 100, riskLevel: row.risk_level,
+      hotDays: Number(row.hot35_days_to_date), droughtWeeks: Number(row.d2plus_weeks_to_date),
+      maxDroughtSeverity: Number(row.max_drought_severity_to_date), waterStorage: Number(row.aws_100cm_mm),
+      soilStorageGroup: row.soil_storage_group, soilPriority: Number(row.soil_vulnerability_component),
+      advisoryAction: row.advisory_action, formulaVersion: row.formula_version,
+    }
+  })
 }
 
 function scoreFor(county: County, mode: MapMode) { return mode === 'heat' ? county.heatRisk : county.soilPriority }
 function riskColor(score: number) { return `hsl(${Math.max(8, 120 - score * 112)} 48% 43%)` }
-function priorityLabel(score: number) { return score >= .7 ? 'High priority' : score >= .4 ? 'Watch' : 'Lower priority' }
-function actionText(score: number) { return score >= .7 ? 'Contact growers this week.' : score >= .4 ? 'Monitor the next weekly update.' : 'Continue routine monitoring.' }
-
-function MetricCard({ label, value, detail }: { label: string; value: string; detail: string }) {
-  return <article className="metric-card"><p>{label}</p><strong>{value}</strong><span>{detail}</span></article>
-}
+function actionText(score: number) { return score >= .6 ? 'Prioritize extension outreach' : score >= .35 ? 'Monitor next weekly update' : 'Continue routine monitoring' }
+function MetricCard({ label, value, detail }: { label: string; value: string; detail: string }) { return <article className="metric-card"><p>{label}</p><strong>{value}</strong><span>{detail}</span></article> }
 
 function App() {
-  const [counties, setCounties] = useState<County[]>([])
+  const [advisoryRows, setAdvisoryRows] = useState<County[]>([])
   const [boundaries, setBoundaries] = useState<FeatureCollection<Polygon, CountyProperties> | null>(null)
+  const [loadError, setLoadError] = useState('')
   const [selectedFips, setSelectedFips] = useState('19153')
+  const [selectedYear, setSelectedYear] = useState(2026)
   const [searchTerm, setSearchTerm] = useState('')
   const [mapMode, setMapMode] = useState<MapMode>('heat')
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all')
-  const [crop, setCrop] = useState<'CORN' | 'SOYBEAN'>('CORN')
+  const [crop, setCrop] = useState<Crop>('CORN')
+  const [page, setPage] = useState<Page>('overview')
 
   useEffect(() => {
-    fetch('/data/counties.geojson').then((response) => response.json()).then((data: FeatureCollection<Polygon, CountyProperties>) => {
-      const iowaFeatures = data.features.filter((feature) => feature.properties.state_alpha === 'IA')
-      setCounties(iowaFeatures.map((feature) => buildCounty(feature.properties)))
-      setBoundaries({ ...data, features: iowaFeatures })
-    }).catch((error) => console.error('Could not load county boundaries:', error))
+    Promise.all([fetch('/data/counties.geojson'), fetch('/data/county_heat_advisory.csv')])
+      .then(async ([mapResponse, advisoryResponse]) => {
+        if (!mapResponse.ok || !advisoryResponse.ok) throw new Error('Could not load dashboard data.')
+        const mapData = await mapResponse.json() as FeatureCollection<Polygon, CountyProperties>
+        const advisoryData = await advisoryResponse.text()
+        setBoundaries({ ...mapData, features: mapData.features.filter((feature) => feature.properties.state_alpha === 'IA') })
+        setAdvisoryRows(parseAdvisoryCsv(advisoryData))
+      })
+      .catch((error) => { console.error(error); setLoadError('The advisory data could not be loaded.') })
   }, [])
+
+  const availableYears = useMemo(() => [...new Set(advisoryRows.map((row) => row.year))].sort((a, b) => b - a), [advisoryRows])
+  const counties = useMemo(() => advisoryRows.filter((row) => row.year === selectedYear && row.crop === crop), [advisoryRows, selectedYear, crop])
+  useEffect(() => { if (availableYears.length && !availableYears.includes(selectedYear)) setSelectedYear(availableYears[0]) }, [availableYears, selectedYear])
+  useEffect(() => { if (counties.length && !counties.some((county) => county.fips === selectedFips)) setSelectedFips(counties[0].fips) }, [counties, selectedFips])
 
   const selectedCounty = counties.find((county) => county.fips === selectedFips) ?? counties[0]
   const countyByFips = useMemo(() => new Map(counties.map((county) => [county.fips, county])), [counties])
-  const visibleCounties = counties.filter((county) => {
+  const filteredCounties = counties.filter((county) => {
     const score = scoreFor(county, mapMode)
-    return priorityFilter === 'all' || (priorityFilter === 'high' ? score >= .7 : score >= .4 && score < .7)
+    return priorityFilter === 'all' || (priorityFilter === 'high' ? score >= .6 : score >= .35 && score < .6)
   })
-  const topCounties = [...visibleCounties].sort((a, b) => scoreFor(b, mapMode) - scoreFor(a, mapMode)).slice(0, 6)
-  const highCount = counties.filter((county) => county.heatRisk >= .7).length
-  const averageRisk = counties.length ? Math.round(counties.reduce((total, county) => total + county.heatRisk, 0) / counties.length * 100) : 0
-  const droughtCount = counties.filter((county) => county.droughtWeeks >= 3).length
-  const lowStorageCount = counties.filter((county) => county.waterStorage < 125).length
   const searchResults = counties.filter((county) => county.county_name.toLowerCase().includes(searchTerm.toLowerCase())).slice(0, 5)
+  const heatPriority = counties.filter((county) => county.riskLevel === 'HIGH').sort((a, b) => b.heatRisk - a.heatRisk)
+  const soilPriority = counties.filter((county) => county.soilStorageGroup === 'LOW').sort((a, b) => a.waterStorage - b.waterStorage)
+  const averageHeat = counties.length ? Math.round(counties.reduce((sum, county) => sum + county.heatRisk, 0) / counties.length * 100) : 0
+  const averageSoil = counties.length ? Math.round(counties.reduce((sum, county) => sum + county.soilPriority, 0) / counties.length * 100) : 0
+  const droughtCount = counties.filter((county) => county.droughtWeeks >= 3).length
+  const lowStorageCount = soilPriority.length
+  const medianStorage = counties.length ? [...counties].sort((a, b) => a.waterStorage - b.waterStorage)[Math.floor(counties.length / 2)].waterStorage : 0
+  const stateRecord = counties[0]
 
   const countyStyle = (feature: any): PathOptions => {
     const county = countyByFips.get(feature?.properties?.fips)
     if (!county) return { fillColor: '#cbd5c0' }
     const score = scoreFor(county, mapMode)
-    const matchesFilter = priorityFilter === 'all' || (priorityFilter === 'high' ? score >= .7 : score >= .4 && score < .7)
-    return { fillColor: riskColor(score), fillOpacity: matchesFilter ? (county.fips === selectedCounty?.fips ? .9 : .67) : .12, color: county.fips === selectedCounty?.fips ? '#183018' : '#f7f8f4', weight: county.fips === selectedCounty?.fips ? 2.5 : 1 }
+    const shown = filteredCounties.some((visible) => visible.fips === county.fips)
+    return { fillColor: riskColor(score), fillOpacity: shown ? (county.fips === selectedCounty?.fips ? .9 : .67) : .12, color: county.fips === selectedCounty?.fips ? '#183018' : '#f7f8f4', weight: county.fips === selectedCounty?.fips ? 2.5 : 1 }
   }
 
   return <main className="app-shell">
-    <aside className="sidebar">
-      <div className="brand-mark">CS</div><div className="brand-copy"><strong>CropShield</strong><span>Decision support</span></div>
-      <nav aria-label="Main navigation"><a className="nav-link active" href="#overview">Overview</a><a className="nav-link" href="#priority-map">Priority map</a><a className="nav-link" href="#county-report">County report</a><a className="nav-link" href="#method">Method</a></nav>
-      <div className="sidebar-note">Historical replay<br /><strong>2023 season</strong></div>
-    </aside>
-
-    <section className="dashboard" id="overview">
-      <header className="topbar">
-        <div><p className="eyebrow">IOWA · {crop}</p><h1>Heat &amp; Drought Priorities</h1><p className="subtitle">Identify where extension outreach can have the greatest impact.</p></div>
-        <div className="freshness"><span>Advisory / replay date</span><strong>August 1, 2023</strong><small>Demo data · not a live advisory</small></div>
-      </header>
-
-      <section className="filter-bar" aria-label="Overview controls">
-        <div className="field"><label htmlFor="crop">Crop</label><select id="crop" value={crop} onChange={(event) => setCrop(event.target.value as 'CORN' | 'SOYBEAN')}><option>CORN</option><option>SOYBEAN</option></select></div>
-        <div className="field"><label>Map lens</label><div className="segmented"><button className={mapMode === 'heat' ? 'selected' : ''} onClick={() => setMapMode('heat')}>Heat risk</button><button className={mapMode === 'soil' ? 'selected' : ''} onClick={() => setMapMode('soil')}>Soil storage</button></div></div>
-        <div className="field"><label>Priority filter</label><div className="segmented"><button className={priorityFilter === 'all' ? 'selected' : ''} onClick={() => setPriorityFilter('all')}>All</button><button className={priorityFilter === 'high' ? 'selected' : ''} onClick={() => setPriorityFilter('high')}>High</button><button className={priorityFilter === 'watch' ? 'selected' : ''} onClick={() => setPriorityFilter('watch')}>Watch</button></div></div>
-      </section>
-
-      <section className="summary-grid" aria-label="Season summary">
-        <MetricCard label="Priority counties" value={String(highCount)} detail="High heat-risk counties" />
-        <MetricCard label="Average heat risk" value={`${averageRisk}%`} detail="Across Iowa counties" />
-        <MetricCard label="Drought pressure" value={String(droughtCount)} detail="Counties with 3+ D2+ weeks" />
-        <MetricCard label="Low soil storage" value={String(lowStorageCount)} detail="Below 125 mm at 100 cm" />
-      </section>
-
-      <section className="workspace">
-        <article className="panel map-panel" id="priority-map">
-          <div className="panel-heading"><div><p className="eyebrow">PRIORITY MAP</p><h2>{mapMode === 'heat' ? 'County heat-risk outlook' : 'County soil-resilience priority'}</h2></div><div className="legend"><span>Lower</span><i /><span>Higher</span></div></div>
-          <div className="map-frame"><MapContainer center={[42.05, -93.5]} zoom={7} scrollWheelZoom={false} aria-label="Iowa county priority map"><TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />{boundaries && <GeoJSON data={boundaries} key={`${mapMode}-${priorityFilter}-${selectedCounty?.fips}`} style={countyStyle} onEachFeature={(feature: any, layer: Layer) => { const county = countyByFips.get(feature.properties?.fips); if (!county) return; layer.bindTooltip(`${county.county_name}: ${Math.round(scoreFor(county, mapMode) * 100)}% ${mapMode === 'heat' ? 'heat risk' : 'soil priority'}`); layer.on('click', () => setSelectedFips(county.fips)) }} />}</MapContainer></div>
-          <p className="panel-footnote">Click a county to open its report. County scores are deterministic mock values until analytics outputs are connected.</p>
-        </article>
-        <article className="panel county-panel" id="county-report">{selectedCounty && <CountyReport county={selectedCounty} mapMode={mapMode} />}</article>
-      </section>
-
-      <section className="bottom-grid">
-        <article className="panel priority-table"><div className="panel-heading"><div><p className="eyebrow">OUTREACH QUEUE</p><h2>Priority counties</h2></div><span className="table-context">{mapMode === 'heat' ? 'Heat risk' : 'Soil priority'}</span></div><div className="table-wrap"><table><thead><tr><th>Rank</th><th>County</th><th>Score</th><th>Drought</th><th>Soil storage</th><th>Action</th></tr></thead><tbody>{topCounties.map((county, index) => <tr key={county.fips} className={county.fips === selectedCounty?.fips ? 'current-row' : ''} onClick={() => setSelectedFips(county.fips)}><td>{index + 1}</td><td><strong>{county.county_name}</strong></td><td><span className="score-dot" style={{ background: riskColor(scoreFor(county, mapMode)) }} />{Math.round(scoreFor(county, mapMode) * 100)}%</td><td>{county.droughtWeeks} wk</td><td>{county.waterStorage} mm</td><td>{actionText(scoreFor(county, mapMode))}</td></tr>)}</tbody></table></div></article>
-        <article className="panel finder-panel"><p className="eyebrow">COUNTY FINDER</p><h2>Explore a county</h2><p className="finder-copy">Search to jump to a county on the map and open its advisory summary.</p><div className="finder-controls"><label htmlFor="county-search">Search Iowa county</label><input id="county-search" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Start typing a county name…" />{searchTerm && <div className="search-results">{searchResults.map((county) => <button key={county.fips} onClick={() => { setSelectedFips(county.fips); setSearchTerm('') }}>{county.county_name}</button>)}</div>}</div></article>
-      </section>
-
-      <section className="method-strip" id="method"><div><p className="eyebrow">METHOD &amp; VALIDATION</p><strong>Heat rule compared against the ≥35°C-days baseline</strong></div><div><span>Train</span><strong>2000–2018</strong></div><div><span>Held out</span><strong>2019–2025</strong></div><div><span>Report</span><strong>Hit rate + false alarms</strong></div><p>Connect your teammates’ actual evaluation values here; do not invent performance metrics.</p></section>
+    <aside className="sidebar"><div className="brand-mark">CS</div><div className="brand-copy"><strong>CropShield</strong><span>Decision support</span></div><nav aria-label="Main navigation"><button className={`nav-link ${page === 'overview' ? 'active' : ''}`} onClick={() => setPage('overview')}>Overview</button><button className={`nav-link ${page === 'state-report' ? 'active' : ''}`} onClick={() => setPage('state-report')}>State report</button></nav><div className="sidebar-note">{stateRecord?.dataMode === 'current' ? 'Current advisory' : 'Historical replay'}<br /><strong>{selectedYear || 'Loading'} season</strong></div></aside>
+    <section className="dashboard">
+      <header className="topbar"><div><p className="eyebrow">IOWA · {crop}</p><h1>{page === 'overview' ? 'Heat & Drought Priorities' : 'Iowa State Report'}</h1><p className="subtitle">{page === 'overview' ? 'Observed weather, drought, and soil signals for extension outreach.' : 'Separate heat-stress and soil-resilience priorities for statewide planning.'}</p></div><div className="freshness"><span>{stateRecord?.dataMode === 'current' ? 'Current advisory date' : 'Historical replay date'}</span><strong>{stateRecord?.asOfDate ?? 'Loading…'}</strong><small>Weather through {stateRecord?.weatherThroughDate ?? '—'} · drought through {stateRecord?.droughtThroughDate ?? '—'}</small></div></header>
+      {loadError && <p className="load-error">{loadError}</p>}
+      {page === 'overview' ? <Overview mapMode={mapMode} setMapMode={setMapMode} priorityFilter={priorityFilter} setPriorityFilter={setPriorityFilter} crop={crop} setCrop={setCrop} selectedYear={selectedYear} setSelectedYear={setSelectedYear} availableYears={availableYears} boundaries={boundaries} countyByFips={countyByFips} countyStyle={countyStyle} selectedCounty={selectedCounty} selectedFips={selectedFips} setSelectedFips={setSelectedFips} searchTerm={searchTerm} setSearchTerm={setSearchTerm} searchResults={searchResults} /> : <StateReport heatPriority={heatPriority} soilPriority={soilPriority} averageHeat={averageHeat} averageSoil={averageSoil} droughtCount={droughtCount} lowStorageCount={lowStorageCount} medianStorage={medianStorage} formulaVersion={stateRecord?.formulaVersion ?? '—'} />}
     </section>
   </main>
 }
 
-function CountyReport({ county, mapMode }: { county: County; mapMode: MapMode }) {
-  const score = scoreFor(county, mapMode), percentage = Math.round(score * 100)
-  const drivers = mapMode === 'heat' ? [`${county.hotDays} days at or above 35°C`, `${county.heatBurden} weighted heat-burden points`, `${county.droughtWeeks} weeks with D2+ drought`] : [`${county.waterStorage} mm available water storage`, `${county.droughtWeeks} weeks with D2+ drought`, `${county.dryStreak}-day maximum dry streak`]
-  return <><div className="panel-heading"><div><p className="eyebrow">SELECTED COUNTY</p><h2>{county.county_name}</h2><span className="county-code">FIPS {county.fips} · {county.state_alpha}</span></div><span className={`risk-pill ${priorityLabel(score).toLowerCase().replace(' ', '-')}`}>{priorityLabel(score)}</span></div>
-    <div className="risk-hero"><span>{mapMode === 'heat' ? 'Heat-risk score' : 'Soil-priority score'}</span><strong>{percentage}%</strong><div className="progress"><i style={{ width: `${percentage}%` }} /></div><p>{mapMode === 'heat' ? 'Use this score to prioritize a conversation—not as a stand-alone forecast.' : 'Higher priority indicates less soil-water buffering during drought conditions.'}</p></div>
-    <section className="why-section"><p className="eyebrow">WHY THIS COUNTY?</p><ul>{drivers.map((driver) => <li key={driver}>{driver}</li>)}</ul></section>
-    <div className="county-metrics"><MetricCard label="35°C days" value={String(county.hotDays)} detail="to advisory date" /><MetricCard label="Heat burden" value={String(county.heatBurden)} detail="weighted exposure" /><MetricCard label="D2+ drought" value={`${county.droughtWeeks} wk`} detail="to advisory date" /><MetricCard label="Soil storage" value={`${county.waterStorage} mm`} detail="0–100 cm context" /></div>
-    <div className="recommendation"><p className="eyebrow">SUGGESTED OUTREACH</p><strong>{actionText(score)}</strong><p>Review crop stage, irrigation access, and local reports with growers before making a recommendation.</p></div>
-  </>
+type OverviewProps = { mapMode: MapMode; setMapMode: (mode: MapMode) => void; priorityFilter: PriorityFilter; setPriorityFilter: (filter: PriorityFilter) => void; crop: Crop; setCrop: (crop: Crop) => void; selectedYear: number; setSelectedYear: (year: number) => void; availableYears: number[]; boundaries: FeatureCollection<Polygon, CountyProperties> | null; countyByFips: Map<string, County>; countyStyle: (feature: any) => PathOptions; selectedCounty?: County; selectedFips: string; setSelectedFips: (fips: string) => void; searchTerm: string; setSearchTerm: (term: string) => void; searchResults: County[] }
+
+function Overview(props: OverviewProps) {
+  return <><section className="filter-bar" aria-label="Overview controls"><div className="field"><label>Crop</label><div className="segmented"><button className={props.crop === 'CORN' ? 'selected' : ''} onClick={() => props.setCrop('CORN')}>Corn</button><button className={props.crop === 'SOYBEANS' ? 'selected' : ''} onClick={() => props.setCrop('SOYBEANS')}>Soybeans</button></div></div><div className="field"><label htmlFor="season">Season</label><select id="season" value={props.selectedYear} onChange={(event) => props.setSelectedYear(Number(event.target.value))}>{props.availableYears.map((year) => <option key={year}>{year}</option>)}</select></div><div className="field"><label>Map lens</label><div className="segmented"><button className={props.mapMode === 'heat' ? 'selected' : ''} onClick={() => props.setMapMode('heat')}>Heat risk</button><button className={props.mapMode === 'soil' ? 'selected' : ''} onClick={() => props.setMapMode('soil')}>Soil storage</button></div></div><div className="field"><label>Priority filter</label><div className="segmented"><button className={props.priorityFilter === 'all' ? 'selected' : ''} onClick={() => props.setPriorityFilter('all')}>All</button><button className={props.priorityFilter === 'high' ? 'selected' : ''} onClick={() => props.setPriorityFilter('high')}>High</button><button className={props.priorityFilter === 'watch' ? 'selected' : ''} onClick={() => props.setPriorityFilter('watch')}>Watch</button></div></div></section>
+    <section className="overview-search"><label htmlFor="county-search">Find a county on the map</label><div className="finder-controls"><input id="county-search" value={props.searchTerm} onChange={(event) => props.setSearchTerm(event.target.value)} placeholder="Search Iowa counties…" />{props.searchTerm && <div className="search-results">{props.searchResults.map((county) => <button key={county.fips} onClick={() => { props.setSelectedFips(county.fips); props.setSearchTerm('') }}>{county.county_name}</button>)}</div>}</div></section>
+    <section className="overview-workspace"><article className="panel map-panel"><div className="panel-heading"><div><p className="eyebrow">PRIORITY MAP</p><h2>{props.mapMode === 'heat' ? 'County heat-risk outlook' : 'County soil-resilience priority'}</h2></div><div className="legend"><span>Lower</span><i /><span>Higher</span></div></div><div className="map-frame"><MapContainer center={[42.05, -93.5]} zoom={7} scrollWheelZoom={false} aria-label="Iowa county priority map"><TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />{props.boundaries && <GeoJSON data={props.boundaries} key={`${props.mapMode}-${props.priorityFilter}-${props.selectedFips}-${props.selectedYear}-${props.crop}`} style={props.countyStyle} onEachFeature={(feature: any, layer: Layer) => { const county = props.countyByFips.get(feature.properties?.fips); if (!county) return; layer.bindTooltip(`${county.county_name}: ${Math.round(scoreFor(county, props.mapMode) * 100)}% ${props.mapMode === 'heat' ? 'heat risk' : 'soil priority'}`); layer.on('click', () => props.setSelectedFips(county.fips)) }} />}</MapContainer></div><p className="panel-footnote">Scores come from the loaded advisory CSV. Click a county to update its observed-condition details.</p></article><article className="panel county-snapshot">{props.selectedCounty ? <CountySnapshot county={props.selectedCounty} mapMode={props.mapMode} /> : <p>Loading county data…</p>}</article></section></>
+}
+
+function CountySnapshot({ county, mapMode }: { county: County; mapMode: MapMode }) {
+  const score = scoreFor(county, mapMode)
+  return <><div className="panel-heading"><div><p className="eyebrow">SELECTED COUNTY</p><h2>{county.county_name}</h2><span className="county-code">FIPS {county.fips} · {county.state_alpha}</span></div><span className="table-context">{county.riskLevel}</span></div><div className="risk-hero"><span>{mapMode === 'heat' ? 'Heat-risk score' : 'Soil-vulnerability score'}</span><strong>{Math.round(score * 100)}%</strong><div className="progress"><i style={{ width: `${Math.round(score * 100)}%` }} /></div><p>{mapMode === 'heat' ? 'Weighted score from observed heat, drought, and soil conditions.' : 'Static soil-water-storage vulnerability category.'}</p></div><div className="county-metrics"><MetricCard label="35°C days" value={String(county.hotDays)} detail="to advisory date" /><MetricCard label="D2+ drought" value={`${county.droughtWeeks} wk`} detail="to advisory date" /><MetricCard label="Max drought" value={String(county.maxDroughtSeverity)} detail="project scale: 0–5" /><MetricCard label="Soil storage" value={`${Math.round(county.waterStorage)} mm`} detail={`${county.soilStorageGroup} storage group`} /></div><div className="recommendation"><p className="eyebrow">SUGGESTED OUTREACH</p><strong>{county.advisoryAction || actionText(score)}</strong><p>Formula: {county.formulaVersion}. Use alongside local crop-stage and field observations.</p></div></>
+}
+
+function StateReport({ heatPriority, soilPriority, averageHeat, averageSoil, droughtCount, lowStorageCount, medianStorage, formulaVersion }: { heatPriority: County[]; soilPriority: County[]; averageHeat: number; averageSoil: number; droughtCount: number; lowStorageCount: number; medianStorage: number; formulaVersion: string }) {
+  return <><section className="state-intro panel"><p className="eyebrow">STATEWIDE BRIEFING</p><h2>Two complementary outreach lenses</h2><p>Heat metrics use the calculated advisory score. Soil metrics use the available soil-water-storage grouping included in the same advisory data.</p></section><section className="report-section heat-report"><div className="report-heading"><div><p className="eyebrow">HEAT STRESS</p><h2>Near-term heat outreach</h2></div><span>Observed conditions</span></div><section className="summary-grid" aria-label="Heat stress statewide metrics"><MetricCard label="Priority counties" value={String(heatPriority.length)} detail="High weighted heat-risk score" /><MetricCard label="Average heat risk" value={`${averageHeat}%`} detail="Across Iowa counties" /><MetricCard label="Drought pressure" value={String(droughtCount)} detail="Counties with 3+ D2+ weeks" /><MetricCard label="Heat threshold" value="35°C" detail="Observed-day baseline" /></section><PriorityTable title="Heat-stress priority counties" counties={heatPriority} mode="heat" /></section><section className="report-section soil-report"><div className="report-heading"><div><p className="eyebrow">SOIL RESILIENCE</p><h2>Soil-water-storage context</h2></div><span>Static soil context</span></div><section className="summary-grid" aria-label="Soil resilience statewide metrics"><MetricCard label="Low-storage counties" value={String(lowStorageCount)} detail="Lowest storage tercile" /><MetricCard label="Average vulnerability" value={`${averageSoil}%`} detail="Low / medium / high group score" /><MetricCard label="Median soil storage" value={`${Math.round(medianStorage)} mm`} detail="Available water, 0–100 cm" /><MetricCard label="Drought pressure" value={String(droughtCount)} detail="Counties with 3+ D2+ weeks" /></section><PriorityTable title="Low soil-water-storage counties" counties={soilPriority} mode="soil" /></section><section className="method-strip"><div><p className="eyebrow">FORMULA STATUS</p><strong>Transparent weighted advisory score</strong></div><div><span>Heat weight</span><strong>60%</strong></div><div><span>Drought weight</span><strong>30%</strong></div><div><span>Soil weight</span><strong>10%</strong></div><p>Formula version: {formulaVersion}. Historical validation should compare this rule against the ≥35°C-days baseline.</p></section></>
+}
+
+function PriorityTable({ title, counties, mode }: { title: string; counties: County[]; mode: MapMode }) {
+  return <article className="panel priority-table"><div className="panel-heading"><h3>{title}</h3><span className="table-context">Top {Math.min(counties.length, 8)}</span></div><div className="table-wrap"><table><thead><tr><th>Rank</th><th>County</th><th>Priority</th><th>35°C days</th><th>D2+ weeks</th><th>Soil storage</th></tr></thead><tbody>{counties.slice(0, 8).map((county, index) => <tr key={county.fips}><td>{index + 1}</td><td><strong>{county.county_name}</strong></td><td><span className="score-dot" style={{ background: riskColor(scoreFor(county, mode)) }} />{Math.round(scoreFor(county, mode) * 100)}%</td><td>{county.hotDays}</td><td>{county.droughtWeeks}</td><td>{Math.round(county.waterStorage)} mm</td></tr>)}</tbody></table>{counties.length === 0 && <p className="empty-table">No counties meet this current priority threshold.</p>}</div></article>
 }
 
 export default App

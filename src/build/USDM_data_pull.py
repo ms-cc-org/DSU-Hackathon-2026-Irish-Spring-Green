@@ -15,7 +15,7 @@ API_URL = (
 
 STATES = ["CA", "NE", "IA", "DE"]
 YEAR_START = 2000
-YEAR_END = 2025
+YEAR_END = 2026
 
 raw_dir = ROOT / "data/raw/usdm"
 raw_dir.mkdir(parents=True, exist_ok=True)

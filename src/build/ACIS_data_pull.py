@@ -21,7 +21,7 @@ STATES = {
 # 1999 needed for wheat year 2000 (season starts Sep 1 1999).
 # ACIS grid 1 covers 1950-present so 1999 is available.
 YEAR_START = 1999
-YEAR_END = 2025
+YEAR_END = 2026
 
 PAYLOAD_ELEMS = [
     {"name": "pcpn", "interval": "dly", "units": "mm", "area_reduce": "county_mean"},
