@@ -5,6 +5,10 @@ pandas==2.3.3
 numpy==2.4.6
 pyarrow==25.0.1         # parquet read/write
 
+#api
+fastapi
+pydantic
+
 #app
 streamlit==1.65.0
 plotly==7.1.0           # interactive charts in streamlit
